@@ -9,13 +9,14 @@
         body { background-color: #050505; color: white; font-family: sans-serif; }
         .media-card { background: #111; border-radius: 20px; border: 1px solid #333; overflow: hidden; margin-bottom: 20px; }
         video, img { width: 100%; height: auto; display: block; background: #000; }
+        .status-ready { color: #22c55e !important; }
     </style>
 </head>
 <body class="p-5">
     <div class="max-w-md mx-auto">
         <header class="mb-8 flex justify-between items-center">
             <h1 class="text-3xl font-black text-pink-500">Vault 📦</h1>
-            <div id="status" class="text-[9px] bg-zinc-900 px-3 py-1 rounded-full border border-zinc-800 text-zinc-500 font-bold">Initializing...</div>
+            <div id="status" class="text-[9px] bg-zinc-900 px-3 py-1 rounded-full border border-zinc-800 text-zinc-500 font-bold uppercase">Connecting...</div>
         </header>
 
         <div class="bg-zinc-900 p-5 rounded-3xl border border-zinc-800 mb-8">
@@ -26,68 +27,98 @@
     </div>
 
     <script>
+        // 1. OFFLINE SERVICE WORKER
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('./sw.js').then(() => {
                 const s = document.getElementById('status');
                 s.innerText = "FULLY OFFLINE READY ✅";
-                s.classList.add('text-green-500');
+                s.classList.add('status-ready');
             });
         }
 
+        // 2. DATABASE (BASE64 STORAGE)
         let db;
-        const request = indexedDB.open("SuperVault", 1);
+        const request = indexedDB.open("SuperVaultV2", 1);
         request.onupgradeneeded = e => {
             db = e.target.result;
             db.createObjectStore("media", { keyPath: "id" });
         };
         request.onsuccess = e => { db = e.target.result; renderVault(); };
 
+        // 3. UNIVERSAL CAPTURE (GitHub Friendly)
         async function saveMedia() {
             const btn = document.getElementById('saveBtn');
             const urlInput = document.getElementById('urlInput');
             const url = urlInput.value.trim();
             if(!url) return;
             btn.disabled = true;
-            btn.innerText = "Downloading...";
+            btn.innerText = "Lakkuntunnanu...";
 
-            try {
-                // Own API or Proxy
-                const res = await fetch(`/api/download?url=${encodeURIComponent(url)}`).catch(() => fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`));
-                const blob = await res.blob();
-                const reader = new FileReader();
-                reader.readAsDataURL(blob);
-                reader.onloadend = async () => {
-                    const base64 = reader.result;
-                    const tx = db.transaction("media", "readwrite");
-                    await tx.objectStore("media").add({ id: Date.now(), data: base64, mime: blob.type, date: new Date().toLocaleString() });
-                    renderVault();
-                    urlInput.value = '';
-                };
-            } catch (e) { alert("Error! Check Brave Shields."); }
-            btn.disabled = false; btn.innerText = "Capture Offline";
+            // Github Pages lo Serverless APIs pani cheyavu, so public proxies mathrame dikku
+            const proxies = [
+                `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+                `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+            ];
+
+            let success = false;
+            for (let proxy of proxies) {
+                try {
+                    const res = await fetch(proxy);
+                    if (!res.ok) continue;
+                    const blob = await res.blob();
+                    
+                    const reader = new FileReader();
+                    reader.readAsDataURL(blob);
+                    reader.onloadend = async () => {
+                        const base64 = reader.result;
+                        const tx = db.transaction("media", "readwrite");
+                        await tx.objectStore("media").add({ 
+                            id: Date.now(), 
+                            data: base64, 
+                            mime: blob.type, 
+                            date: new Date().toLocaleString() 
+                        });
+                        await new Promise(r => tx.oncomplete = r);
+                        renderVault();
+                        urlInput.value = '';
+                    };
+                    success = true;
+                    break;
+                } catch (e) { console.log("Trying next proxy..."); }
+            }
+
+            if(!success) alert("Brave Shields block chesthundhi mama! Orange Lion icon click chesi OFF chesi try cheyi.");
+            btn.disabled = false;
+            btn.innerText = "Capture Offline";
         }
 
         function renderVault() {
             const grid = document.getElementById('vaultGrid');
             grid.innerHTML = '';
-            db.transaction("media", "readonly").objectStore("media").openCursor(null, 'prev').onsuccess = (e) => {
+            const tx = db.transaction("media", "readonly");
+            tx.objectStore("media").openCursor(null, 'prev').onsuccess = (e) => {
                 const cursor = e.target.result;
                 if (cursor) {
                     const item = cursor.value;
                     const card = document.createElement('div');
                     card.className = "media-card";
                     card.innerHTML = `${item.mime.startsWith('image/') ? `<img src="${item.data}">` : `<video src="${item.data}" controls></video>`}
-                        <div class="p-4 flex justify-between items-center"><span class="text-[10px] text-zinc-500">${item.date}</span>
-                        <button onclick="deleteItem(${item.id})" class="text-red-500 text-[10px] font-bold">DELETE</button></div>`;
+                        <div class="p-4 flex justify-between items-center bg-[#0a0a0a]">
+                            <span class="text-[10px] text-zinc-600 font-bold uppercase tracking-widest">${item.date}</span>
+                            <button onclick="deleteItem(${item.id})" class="text-red-900 text-[10px] font-black uppercase tracking-tighter">Delete</button>
+                        </div>`;
                     grid.appendChild(card);
                     cursor.continue();
                 }
             };
         }
+
         function deleteItem(id) {
-            const tx = db.transaction("media", "readwrite");
-            tx.objectStore("media").delete(id);
-            tx.oncomplete = () => renderVault();
+            if(confirm("Delete cheyamantava mama?")) {
+                const tx = db.transaction("media", "readwrite");
+                tx.objectStore("media").delete(id);
+                tx.oncomplete = () => renderVault();
+            }
         }
     </script>
 </body>

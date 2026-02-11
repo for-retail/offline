@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Offline Vault</title>
+    <title>Offline Vault Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background-color: #050505; color: white; font-family: sans-serif; }
-        .media-card { background: #111; border-radius: 20px; border: 1px solid #222; overflow: hidden; margin-bottom: 20px; position: relative; }
+        .media-card { background: #111; border-radius: 20px; border: 1px solid #222; overflow: hidden; margin-bottom: 20px; }
         video, img { width: 100%; height: auto; display: block; }
     </style>
 </head>
@@ -16,14 +16,14 @@
     <div class="max-w-md mx-auto">
         <header class="mb-6 flex justify-between items-center">
             <h1 class="text-3xl font-bold text-pink-500">Vault 📦</h1>
-            <span id="status" class="text-[9px] bg-zinc-800 px-2 py-1 rounded text-zinc-500">CONNECTING...</span>
+            <span id="status" class="text-[10px] bg-zinc-800 px-2 py-1 rounded text-zinc-500">SYNCING...</span>
         </header>
 
         <div class="bg-zinc-900 p-4 rounded-3xl border border-zinc-800 mb-8">
-            <input id="urlInput" type="text" placeholder="Paste link here..." 
+            <input id="urlInput" type="text" placeholder="Paste link here mama..." 
                    class="w-full bg-zinc-800 p-3 rounded-xl outline-none text-sm mb-3 text-white border border-zinc-700">
             <button id="saveBtn" onclick="saveOne()" class="w-full bg-pink-600 p-3 rounded-xl font-bold active:scale-95 transition">
-                Save to Vault
+                Save Offline
             </button>
         </div>
 
@@ -31,16 +31,27 @@
     </div>
 
     <script>
-        // 1. Service Worker Registration
+        // --- 1. SERVICE WORKER REGISTRATION (OFFLINE WEBSITE FIX) ---
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js', { scope: './' })
-                .then(() => document.getElementById('status').innerText = "OFFLINE READY ✅")
-                .catch(() => document.getElementById('status').innerText = "OFFLINE ERROR ❌");
-            });
+            // Service worker code ni inline ga blob la create chesthunnam logic mismatch rakunda
+            const swCode = `
+                const CACHE_NAME = 'vault-v3';
+                self.addEventListener('install', e => {
+                    e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(['./', 'index.html', 'https://cdn.tailwindcss.com'])));
+                });
+                self.addEventListener('fetch', e => {
+                    e.respondWith(caches.match(e.request).then(r => r || fetch(e.request)));
+                });
+            `;
+            const blob = new Blob([swCode], { type: 'application/javascript' });
+            const swUrl = URL.createObjectURL(blob);
+
+            navigator.serviceWorker.register(swUrl, { scope: './' })
+            .then(() => document.getElementById('status').innerText = "OFFLINE READY ✅")
+            .catch(() => document.getElementById('status').innerText = "OFFLINE ERROR ❌");
         }
 
-        // 2. Database Logic
+        // --- 2. DATABASE LOGIC (OFFLINE VIDEOS FIX) ---
         let db;
         const request = indexedDB.open("FinalVaultDB", 1);
         request.onupgradeneeded = e => {
@@ -55,7 +66,7 @@
             if(!url) return;
 
             btn.disabled = true;
-            btn.innerText = "Saving...";
+            btn.innerText = "Lakkuntunnanu...";
             
             try {
                 const res = await fetch(url);
@@ -68,16 +79,17 @@
                     date: new Date().toLocaleDateString()
                 });
                 await new Promise(r => tx.oncomplete = r);
-            } catch (err) { alert("Link issue mama! CORS error vundocchu."); }
+            } catch (err) { alert("Download link correct ga pettu mama!"); }
 
             btn.disabled = false;
-            btn.innerText = "Save to Vault";
+            btn.innerText = "Save Offline";
             document.getElementById('urlInput').value = '';
             renderVault();
         }
 
+        // --- 3. DELETE LOGIC ---
         function deleteItem(id) {
-            if(confirm("Delete cheyamantava mama?")) {
+            if(confirm("Idhi delete cheyamantava?")) {
                 const tx = db.transaction("media", "readwrite");
                 tx.objectStore("media").delete(id);
                 tx.oncomplete = () => renderVault();
@@ -102,9 +114,9 @@
 
                     card.innerHTML = `
                         ${content}
-                        <div class="p-3 flex justify-between items-center bg-zinc-900">
-                            <span class="text-[10px] text-zinc-500 font-bold">${item.date}</span>
-                            <button onclick="deleteItem(${item.id})" class="text-[10px] bg-red-900/30 text-red-500 px-3 py-1 rounded-full border border-red-500/20 font-bold">
+                        <div class="p-4 flex justify-between items-center bg-zinc-900">
+                            <span class="text-[10px] text-zinc-500 font-bold tracking-widest">${item.date}</span>
+                            <button onclick="deleteItem(${item.id})" class="text-[10px] bg-red-900/20 text-red-500 border border-red-500/20 px-4 py-1.5 rounded-full font-bold active:bg-red-900 transition">
                                 DELETE
                             </button>
                         </div>

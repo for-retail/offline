@@ -6,9 +6,11 @@
     <title>Personal Vault</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #050505; color: white; font-family: sans-serif; }
+        body { background-color: #050505; color: white; font-family: sans-serif; -webkit-tap-highlight-color: transparent; }
         .media-card { background: #111; border-radius: 20px; border: 1px solid #222; overflow: hidden; margin-bottom: 20px; }
         video, img { width: 100%; height: auto; display: block; background: #000; }
+        /* Smooth loading for Brave */
+        .status-ready { color: #22c55e !important; background-color: rgba(34, 197, 94, 0.1) !important; border-color: rgba(34, 197, 94, 0.2) !important; }
     </style>
 </head>
 <body class="p-5">
@@ -16,14 +18,14 @@
     <div class="max-w-md mx-auto">
         <header class="mb-8 flex justify-between items-center">
             <h1 class="text-3xl font-black text-pink-500 tracking-tighter">Vault 📦</h1>
-            <div id="status" class="text-[9px] bg-zinc-900 px-3 py-1 rounded-full border border-zinc-800 text-zinc-500 font-bold uppercase tracking-widest">
+            <div id="status" class="text-[9px] bg-zinc-900 px-3 py-1 rounded-full border border-zinc-800 text-zinc-500 font-bold uppercase tracking-widest transition-all">
                 Initializing...
             </div>
         </header>
 
         <div class="bg-zinc-900 p-5 rounded-3xl border border-zinc-800 mb-8 shadow-2xl">
-            <input id="urlInput" type="text" placeholder="Paste link here..." 
-                   class="w-full bg-zinc-800 p-4 rounded-xl outline-none text-sm mb-4 text-white border border-zinc-700">
+            <input id="urlInput" type="text" placeholder="Paste media/downloader link here..." 
+                   class="w-full bg-zinc-800 p-4 rounded-xl outline-none text-sm mb-4 text-white border border-zinc-700 focus:border-pink-500">
             <button id="saveBtn" onclick="saveMedia()" class="w-full bg-pink-600 p-4 rounded-xl font-bold active:scale-95 transition-all">
                 Save Offline
             </button>
@@ -33,12 +35,14 @@
     </div>
 
     <script>
-        // --- 1. SERVICE WORKER ---
+        // --- 1. SERVICE WORKER FIX ---
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('./sw.js').then(() => {
                 const s = document.getElementById('status');
                 s.innerText = "OFFLINE READY ✅";
-                s.className = "text-[9px] bg-green-900/20 text-green-500 px-3 py-1 rounded-full border border-green-500/20 font-bold";
+                s.classList.add('status-ready');
+            }).catch(() => {
+                document.getElementById('status').innerText = "OFFLINE ERROR ❌";
             });
         }
 
@@ -47,11 +51,16 @@
         const request = indexedDB.open("BraveStableDB", 1);
         request.onupgradeneeded = e => {
             db = e.target.result;
-            if(!db.objectStoreNames.contains("media")) db.createObjectStore("media", { keyPath: "id" });
+            if(!db.objectStoreNames.contains("media")) {
+                db.createObjectStore("media", { keyPath: "id" });
+            }
         };
-        request.onsuccess = e => { db = e.target.result; renderVault(); };
+        request.onsuccess = e => { 
+            db = e.target.result; 
+            renderVault(); 
+        };
 
-        // --- 3. THE "UNIVERSAL SAVE" LOGIC ---
+        // --- 3. UNIVERSAL SAVE LOGIC (CORS BYPASS) ---
         async function saveMedia() {
             const btn = document.getElementById('saveBtn');
             const urlInput = document.getElementById('urlInput');
@@ -59,12 +68,12 @@
             if(!rawUrl) return;
 
             btn.disabled = true;
-            btn.innerText = "Processing...";
+            btn.innerText = "Lakkuntunnanu...";
 
-            // BRAVE BLOCK BYPASS: Trying multiple proxies to find a loophole
+            // BRAVE/BING SECURE PROXY LIST
             const proxySources = [
+                `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(rawUrl)}`,
                 `https://api.allorigins.win/raw?url=${encodeURIComponent(rawUrl)}`,
-                `https://corsproxy.io/?${encodeURIComponent(rawUrl)}`,
                 rawUrl // Direct attempt
             ];
 
@@ -72,10 +81,19 @@
 
             for (let target of proxySources) {
                 try {
-                    const res = await fetch(target);
+                    const controller = new AbortController();
+                    const id = setTimeout(() => controller.abort(), 8000); // 8 sec timeout
+
+                    const res = await fetch(target, { signal: controller.signal });
+                    clearTimeout(id);
+
                     if (!res.ok) continue;
 
                     const blob = await res.blob();
+                    
+                    // Basic check to ensure it's not an empty response
+                    if (blob.size < 200) continue;
+
                     const tx = db.transaction("media", "readwrite");
                     const store = tx.objectStore("media");
                     
@@ -83,51 +101,67 @@
                         id: Date.now(),
                         data: blob,
                         mime: blob.type,
-                        date: new Date().toLocaleDateString()
+                        date: new Date().toLocaleDateString('en-GB')
                     });
                     
                     await new Promise(r => tx.oncomplete = r);
                     saved = true;
                     break; 
-                } catch (e) { continue; }
+                } catch (e) { 
+                    console.log("Proxy failed, trying next...");
+                    continue; 
+                }
             }
 
             if (saved) {
                 renderVault();
                 urlInput.value = '';
-                alert("Saved successfully mama!");
+                alert("Saved successfully mama! ✅");
             } else {
-                alert("Brave Shields block chesthundhi mama! Brave lo aa 'Lion Icon' (Shields) click chesi OFF chesi try cheyi kachithanga pani chesthundhi.");
+                alert("Brave Shields block chesthundhi mama! Brave lo paina 'Lion Icon' (Shields) click chesi OFF chesi try cheyi kachithanga panichesthundhi.");
             }
 
             btn.disabled = false;
             btn.innerText = "Save Offline";
         }
 
+        // --- 4. DELETE LOGIC ---
         function deleteItem(id) {
-            if(confirm("Delete it?")) {
+            if(confirm("Delete cheyamantava mama?")) {
                 const tx = db.transaction("media", "readwrite");
                 tx.objectStore("media").delete(id);
-                tx.oncomplete = () => renderVault();
+                tx.oncomplete = () => {
+                    renderVault();
+                };
             }
         }
 
+        // --- 5. RENDER LOGIC ---
         function renderVault() {
             const grid = document.getElementById('vaultGrid');
             grid.innerHTML = '';
+            
             const tx = db.transaction("media", "readonly");
-            tx.objectStore("media").openCursor(null, 'prev').onsuccess = (e) => {
+            const store = tx.objectStore("media");
+            
+            store.openCursor(null, 'prev').onsuccess = (e) => {
                 const cursor = e.target.result;
                 if (cursor) {
                     const item = cursor.value;
                     const blobUrl = URL.createObjectURL(item.data);
                     const card = document.createElement('div');
                     card.className = "media-card";
+                    
+                    // Check if it's an image or video
+                    const isImg = item.mime.startsWith('image/');
+                    
                     card.innerHTML = `
-                        ${item.mime.startsWith('image/') ? `<img src="${blobUrl}">` : `<video src="${blobUrl}" controls></video>`}
+                        ${isImg ? `<img src="${blobUrl}">` : `<video src="${blobUrl}" controls></video>`}
                         <div class="p-4 flex justify-between items-center bg-zinc-900/50">
-                            <span class="text-[10px] text-zinc-500 font-bold">${item.date}</span>
-                            <button onclick="deleteItem(${item.id})" class="text-[10px] text-red-500 font-black tracking-widest uppercase border border-red-900/20 px-4 py-1.5 rounded-xl">Delete</button>
+                            <span class="text-[10px] text-zinc-500 font-bold uppercase tracking-tight">${item.date}</span>
+                            <button onclick="deleteItem(${item.id})" class="text-[10px] text-red-500 font-black tracking-widest uppercase border border-red-900/20 px-4 py-2 rounded-xl active:bg-red-600 transition-colors">
+                                Delete
+                            </button>
                         </div>
                     `;
                     grid.appendChild(card);

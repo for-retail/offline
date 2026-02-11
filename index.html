@@ -3,121 +3,114 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Offline Vault 📦</title>
+    <title>Offline Media Vault</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background-color: #050505; color: white; font-family: sans-serif; }
-        .reel-card { background: #111; border-radius: 20px; border: 1px solid #222; overflow: hidden; }
-        video, img { width: 100%; height: auto; border-radius: 15px; }
+        .media-card { background: #111; border-radius: 20px; border: 1px solid #222; overflow: hidden; }
+        video, img { width: 100%; height: auto; display: block; }
     </style>
 </head>
 <body class="p-5">
 
     <div class="max-w-md mx-auto">
-        <h1 class="text-3xl font-bold text-pink-500 mb-2">Offline Vault 📦</h1>
-        <p class="text-gray-400 text-sm mb-6 font-bold uppercase tracking-widest">Net off chesi chusko mama!</p>
+        <header class="mb-6">
+            <h1 class="text-3xl font-bold text-pink-500">Offline Vault 📦</h1>
+            <div id="offlineBadge" class="text-[10px] mt-1 text-zinc-500 font-bold uppercase tracking-widest">
+                Checking Storage...
+            </div>
+        </header>
 
         <div class="flex flex-col gap-3 mb-8 bg-zinc-900 p-4 rounded-3xl border border-zinc-800">
             <textarea id="mediaUrls" rows="3" placeholder="Paste links (one per line)..." 
                    class="bg-zinc-800 p-3 rounded-xl outline-none text-sm border border-zinc-700"></textarea>
-            <button id="saveBtn" onclick="processBulk()" class="bg-pink-600 p-3 rounded-xl font-bold active:scale-95 transition">
-                Save to Offline Vault
+            <button id="saveBtn" onclick="saveToVault()" class="bg-pink-600 p-3 rounded-xl font-bold active:scale-95 transition">
+                Bulk Save Offline
             </button>
         </div>
 
-        <div id="vaultGrid" class="flex flex-col gap-6">
-            </div>
+        <div id="vaultGrid" class="flex flex-col gap-6"></div>
     </div>
 
     <script>
-        const grid = document.getElementById('vaultGrid');
+        let db;
+        // Finalized Database Name
+        const request = indexedDB.open("FinalVaultDB", 1);
 
-        // RECOVERY LOGIC: Anni paatha perlu vethiki offline data ni load chesthunnam
-        const dbsToTry = ["PersonalVault", "UniversalMediaVault", "UniversalVault"];
-        const storesToTry = ["videos", "media", "mediaItems"];
+        request.onupgradeneeded = e => {
+            db = e.target.result;
+            db.createObjectStore("media", { keyPath: "id" });
+        };
 
-        function loadEverything() {
-            grid.innerHTML = '';
-            dbsToTry.forEach(dbName => {
-                const request = indexedDB.open(dbName);
-                request.onsuccess = (e) => {
-                    const db = e.target.result;
-                    storesToTry.forEach(storeName => {
-                        if (db.objectStoreNames.contains(storeName)) {
-                            renderFromStore(db, storeName);
-                        }
+        request.onsuccess = e => {
+            db = e.target.result;
+            document.getElementById('offlineBadge').innerHTML = "Storage Ready ✅";
+            renderVault();
+        };
+
+        async function saveToVault() {
+            const btn = document.getElementById('saveBtn');
+            const urls = document.getElementById('mediaUrls').value.split('\n').filter(u => u.trim() !== "");
+            
+            if(!urls.length) return alert("Links pettu mama!");
+
+            btn.disabled = true;
+            for (let i = 0; i < urls.length; i++) {
+                btn.innerText = `Lakkuntunnanu (${i+1}/${urls.length})...`;
+                try {
+                    // MUKHYAM: fetch(url) kotti motham file data (blob) ni lakkuntunnam
+                    const res = await fetch(urls[i]);
+                    const blob = await res.blob();
+                    
+                    const tx = db.transaction("media", "readwrite");
+                    tx.objectStore("media").add({
+                        id: Date.now() + i,
+                        data: blob, // Actual video/image binary data
+                        mime: blob.type,
+                        date: new Date().toLocaleDateString()
                     });
-                };
-            });
+                    await new Promise(r => tx.oncomplete = r);
+                } catch (err) {
+                    console.log("Error with link:", urls[i]);
+                }
+            }
+            btn.innerText = "Bulk Save Offline";
+            btn.disabled = false;
+            document.getElementById('mediaUrls').value = '';
+            renderVault();
         }
 
-        function renderFromStore(db, storeName) {
-            const tx = db.transaction(storeName, "readonly");
-            const store = tx.objectStore(storeName);
-            store.openCursor(null, 'prev').onsuccess = (e) => {
+        function renderVault() {
+            const grid = document.getElementById('vaultGrid');
+            grid.innerHTML = '';
+            
+            const tx = db.transaction("media", "readonly");
+            tx.objectStore("media").openCursor(null, 'prev').onsuccess = (e) => {
                 const cursor = e.target.result;
                 if (cursor) {
                     const item = cursor.value;
-                    // File data (Blob) undho ledho check chesthunnam (Pure Offline)
-                    const blobData = item.data || item.videoBlob || item.blob;
-                    if (blobData) {
-                        const blobUrl = URL.createObjectURL(blobData);
-                        const mime = item.mime || blobData.type || "video/mp4";
-                        
-                        const card = document.createElement('div');
-                        card.className = "reel-card p-2 shadow-xl";
-                        
-                        let mediaHtml = mime.startsWith('image/') 
-                            ? `<img src="${blobUrl}">` 
-                            : `<video src="${blobUrl}" controls preload="metadata"></video>`;
+                    // MUKHYAM: Browser URL.createObjectURL vadithe offline lo kooda pani chesthundhi
+                    const blobUrl = URL.createObjectURL(item.data);
+                    
+                    const card = document.createElement('div');
+                    card.className = "media-card p-2 shadow-2xl";
+                    
+                    let content = item.mime.startsWith('image/') 
+                        ? `<img src="${blobUrl}">` 
+                        : `<video src="${blobUrl}" controls preload="metadata"></video>`;
 
-                        card.innerHTML = `
-                            ${mediaHtml}
-                            <div class="p-3 flex justify-between items-center">
-                                <span class="text-[10px] text-green-500 font-bold uppercase">Ready Offline ✅</span>
-                                <span class="text-[9px] text-zinc-600">${item.date || 'Saved'}</span>
-                            </div>
-                        `;
-                        grid.appendChild(card);
-                    }
+                    card.innerHTML = `
+                        ${content}
+                        <div class="p-3 flex justify-between bg-zinc-900/50 mt-2 rounded-xl">
+                            <span class="text-[9px] text-green-500 font-bold uppercase">Ready Offline ✅</span>
+                            <span class="text-[9px] text-zinc-500">${item.date}</span>
+                        </div>
+                    `;
+                    grid.appendChild(card);
                     cursor.continue();
                 }
             };
         }
-
-        async function processBulk() {
-            const btn = document.getElementById('saveBtn');
-            const urls = document.getElementById('mediaUrls').value.split('\n').filter(u => u.trim() !== "");
-            if(!urls.length) return;
-
-            btn.disabled = true;
-            // Kotha items ni "PersonalVault" lo "videos" dabba lo dhesthunnam (Paatha settings)
-            const request = indexedDB.open("PersonalVault", 1);
-            request.onsuccess = async (e) => {
-                const db = e.target.result;
-                for (let i = 0; i < urls.length; i++) {
-                    btn.innerText = `Lakkuntunnanu (${i+1}/${urls.length})...`;
-                    try {
-                        const res = await fetch(urls[i]);
-                        const blob = await res.blob();
-                        const tx = db.transaction("videos", "readwrite");
-                        tx.objectStore("videos").add({
-                            id: Date.now() + i,
-                            data: blob,
-                            mime: blob.type,
-                            date: new Date().toLocaleDateString()
-                        });
-                    } catch (err) { console.log("Fail:", urls[i]); }
-                }
-                btn.innerText = "Save to Offline Vault";
-                btn.disabled = false;
-                document.getElementById('mediaUrls').value = '';
-                loadEverything();
-            };
-        }
-
-        // App Start
-        loadEverything();
     </script>
 </body>
 </html>

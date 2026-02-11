@@ -1,15 +1,9 @@
 {
-  "name": "Insta Vault",
+  "name": "Personal Vault",
   "short_name": "Vault",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#050505",
-  "theme_color": "#db2777",
-  "icons": [
-    {
-      "src": "https://cdn-icons-png.flaticon.com/512/174/174855.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
-  ]
+  "theme_color": "#ec4899",
+  "icons": [{ "src": "https://cdn-icons-png.flaticon.com/512/2991/2991148.png", "sizes": "512x512", "type": "image/png" }]
 }

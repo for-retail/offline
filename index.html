@@ -3,29 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>The Vault 📦</title>
+    <title>Personal Vault</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background-color: #050505; color: white; font-family: sans-serif; }
         .media-card { background: #111; border-radius: 20px; border: 1px solid #222; overflow: hidden; margin-bottom: 20px; }
-        video, img { width: 100%; height: auto; display: block; }
+        video, img { width: 100%; height: auto; display: block; background: #000; }
     </style>
 </head>
 <body class="p-5">
 
     <div class="max-w-md mx-auto">
         <header class="mb-8 flex justify-between items-center">
-            <h1 class="text-3xl font-black text-pink-500">Vault 📦</h1>
+            <h1 class="text-3xl font-black text-pink-500 tracking-tighter">Vault 📦</h1>
             <div id="status" class="text-[9px] bg-zinc-900 px-3 py-1 rounded-full border border-zinc-800 text-zinc-500 font-bold uppercase tracking-widest">
-                Connecting...
+                Initializing...
             </div>
         </header>
 
         <div class="bg-zinc-900 p-5 rounded-3xl border border-zinc-800 mb-8 shadow-2xl">
-            <input id="urlInput" type="text" placeholder="Paste ANY media link here..." 
+            <input id="urlInput" type="text" placeholder="Paste link here..." 
                    class="w-full bg-zinc-800 p-4 rounded-xl outline-none text-sm mb-4 text-white border border-zinc-700">
             <button id="saveBtn" onclick="saveMedia()" class="w-full bg-pink-600 p-4 rounded-xl font-bold active:scale-95 transition-all">
-                Save to Vault
+                Save Offline
             </button>
         </div>
 
@@ -33,72 +33,75 @@
     </div>
 
     <script>
-        // --- 1. OFFLINE STATUS FIX ---
+        // --- 1. SERVICE WORKER ---
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('./sw.js').then(() => {
                 const s = document.getElementById('status');
                 s.innerText = "OFFLINE READY ✅";
                 s.className = "text-[9px] bg-green-900/20 text-green-500 px-3 py-1 rounded-full border border-green-500/20 font-bold";
-            }).catch(() => {
-                document.getElementById('status').innerText = "SW ERROR ❌";
             });
         }
 
-        // --- 2. DATABASE ---
+        // --- 2. STORAGE (IndexedDB) ---
         let db;
-        const request = indexedDB.open("StableVaultDB", 1);
+        const request = indexedDB.open("BraveStableDB", 1);
         request.onupgradeneeded = e => {
             db = e.target.result;
             if(!db.objectStoreNames.contains("media")) db.createObjectStore("media", { keyPath: "id" });
         };
         request.onsuccess = e => { db = e.target.result; renderVault(); };
 
-        // --- 3. UNIVERSAL SAVER ---
+        // --- 3. THE "UNIVERSAL SAVE" LOGIC ---
         async function saveMedia() {
             const btn = document.getElementById('saveBtn');
             const urlInput = document.getElementById('urlInput');
-            const url = urlInput.value.trim();
-            if(!url) return;
+            const rawUrl = urlInput.value.trim();
+            if(!rawUrl) return;
 
             btn.disabled = true;
-            btn.innerText = "Lakkuntunnanu...";
+            btn.innerText = "Processing...";
 
-            // MULTIPLE PROXIES TRY CHESTHUNNAM (Okati block ayina inkoti pani chesthundhi)
-            const proxies = [
-                `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-                `https://corsproxy.io/?${encodeURIComponent(url)}`,
-                `https://images.weserv.nl/?url=${encodeURIComponent(url)}`
+            // BRAVE BLOCK BYPASS: Trying multiple proxies to find a loophole
+            const proxySources = [
+                `https://api.allorigins.win/raw?url=${encodeURIComponent(rawUrl)}`,
+                `https://corsproxy.io/?${encodeURIComponent(rawUrl)}`,
+                rawUrl // Direct attempt
             ];
 
-            let success = false;
-            for (let proxy of proxies) {
+            let saved = false;
+
+            for (let target of proxySources) {
                 try {
-                    const res = await fetch(proxy);
+                    const res = await fetch(target);
                     if (!res.ok) continue;
-                    
+
                     const blob = await res.blob();
                     const tx = db.transaction("media", "readwrite");
-                    tx.objectStore("media").add({
+                    const store = tx.objectStore("media");
+                    
+                    await store.add({
                         id: Date.now(),
                         data: blob,
                         mime: blob.type,
                         date: new Date().toLocaleDateString()
                     });
+                    
                     await new Promise(r => tx.oncomplete = r);
-                    success = true;
-                    break; // Okasari save ayithe inka chaalu
-                } catch (err) { continue; }
+                    saved = true;
+                    break; 
+                } catch (e) { continue; }
             }
 
-            if (success) {
+            if (saved) {
                 renderVault();
                 urlInput.value = '';
+                alert("Saved successfully mama!");
             } else {
-                alert("Inka ravatledhu mama! Ee link browser block chesthundhi. Vere downloader link try cheyi.");
+                alert("Brave Shields block chesthundhi mama! Brave lo aa 'Lion Icon' (Shields) click chesi OFF chesi try cheyi kachithanga pani chesthundhi.");
             }
 
             btn.disabled = false;
-            btn.innerText = "Save to Vault";
+            btn.innerText = "Save Offline";
         }
 
         function deleteItem(id) {
@@ -122,9 +125,9 @@
                     card.className = "media-card";
                     card.innerHTML = `
                         ${item.mime.startsWith('image/') ? `<img src="${blobUrl}">` : `<video src="${blobUrl}" controls></video>`}
-                        <div class="p-4 flex justify-between items-center bg-zinc-900/50 border-t border-zinc-800">
-                            <span class="text-[10px] text-zinc-500 font-bold uppercase">${item.date}</span>
-                            <button onclick="deleteItem(${item.id})" class="text-[10px] text-red-500 font-black uppercase tracking-widest border border-red-900/30 px-4 py-1.5 rounded-xl active:bg-red-900 transition-all">Delete</button>
+                        <div class="p-4 flex justify-between items-center bg-zinc-900/50">
+                            <span class="text-[10px] text-zinc-500 font-bold">${item.date}</span>
+                            <button onclick="deleteItem(${item.id})" class="text-[10px] text-red-500 font-black tracking-widest uppercase border border-red-900/20 px-4 py-1.5 rounded-xl">Delete</button>
                         </div>
                     `;
                     grid.appendChild(card);

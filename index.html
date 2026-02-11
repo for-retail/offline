@@ -28,24 +28,75 @@
     </div>
 
     <script>
-        // 1. Save Logic (Data akkadne undali)
-        function saveReel() {
-            const url = document.getElementById('instaUrl').value;
-            if(!url) return alert("Link pettu mama!");
+        // 1. Database Setup (IndexedDB)
+const dbName = "InstaVaultDB";
+let db;
+const request = indexedDB.open(dbName, 1);
 
-            const newReel = {
-                id: Date.now(),
-                url: url,
-                thumb: "https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=400" // Temporary Image
-            };
+request.onupgradeneeded = e => {
+    db = e.target.result;
+    db.createObjectStore("videos", { keyPath: "id" });
+};
+request.onsuccess = e => { db = e.target.result; renderReels(); };
 
-            let reels = JSON.parse(localStorage.getItem('myVault')) || [];
-            reels.push(newReel);
-            localStorage.setItem('myVault', JSON.stringify(reels));
+// 2. Save Reel with Offline Support
+async function saveReel() {
+    const url = document.getElementById('instaUrl').value;
+    if(!url) return alert("Link pettu mama!");
 
+    try {
+        // Proxy API vaduthunnam (Deeniki constraints untayi, but test cheyochu)
+        // Note: Real world lo nuvvu RapidAPI key vadithe inka stable ga untundi
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+        
+        const response = await fetch(proxyUrl);
+        const blob = await response.blob(); // Video/Data ni binary ga marchu
+
+        const newReel = {
+            id: Date.now(),
+            url: url,
+            videoBlob: blob, // Actual video data ikkada dachaam!
+            timestamp: new Date().toLocaleString()
+        };
+
+        const transaction = db.transaction("videos", "readwrite");
+        transaction.objectStore("videos").add(newReel);
+        
+        transaction.oncomplete = () => {
+            alert("Offline storage success mama! Play chesko.");
             renderReels();
-            document.getElementById('instaUrl').value = '';
+        };
+    } catch (err) {
+        console.error(err);
+        alert("API block chesindi mama. Embed logic ki switch avdham.");
+    }
+}
+
+// 3. Render function for Offline Video
+function renderReels() {
+    const grid = document.getElementById('vaultGrid');
+    grid.innerHTML = '';
+    
+    const transaction = db.transaction("videos", "readonly");
+    const store = transaction.objectStore("videos");
+    
+    store.openCursor(null, 'prev').onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor) {
+            const reel = cursor.value;
+            const videoUrl = URL.createObjectURL(reel.videoBlob); // Blob nundi link create chesthunnam
+            
+            const card = document.createElement('div');
+            card.className = "reel-card bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800 p-2 mb-4";
+            card.innerHTML = `
+                <video src="${videoUrl}" controls class="w-full rounded-xl"></video>
+                <p class="text-[10px] text-gray-500 mt-2 truncate">${reel.url}</p>
+            `;
+            grid.appendChild(card);
+            cursor.continue();
         }
+    };
+}
 
         // 2. Display Logic (Malli open chesinappudu)
         function renderReels() {

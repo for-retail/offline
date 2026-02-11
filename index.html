@@ -2,23 +2,25 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Insta Vault - Offline Reels</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Insta Vault - Offline</title>
+    <link rel="manifest" href="manifest.json">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        .reel-card { transition: transform 0.2s; }
-        .reel-card:hover { transform: scale(1.02); }
+        .reel-card:hover { transform: translateY(-5px); transition: 0.3s; }
+        body { background-color: #050505; font-family: sans-serif; }
     </style>
 </head>
-<body class="bg-[#050505] text-white p-4">
+<body class="text-white p-5">
 
     <div class="max-w-md mx-auto">
-        <h1 class="text-3xl font-extrabold mb-2 bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent">Insta Vault</h1>
-        <p class="text-gray-400 text-sm mb-6">Offline lo kooda nee favorite reels chusko!</p>
+        <h1 class="text-3xl font-bold text-pink-500 mb-2">Insta Vault 📦</h1>
+        <p class="text-gray-400 text-sm mb-6">Links save cheyi, offline lo chusko!</p>
 
-        <div class="flex gap-2 p-2 bg-zinc-900 rounded-2xl border border-zinc-800 mb-8 focus-within:border-pink-500">
-            <input id="instaUrl" type="text" placeholder="Paste link here..." 
+        <div class="flex gap-2 mb-8 bg-zinc-900 p-2 rounded-2xl border border-zinc-800">
+            <input id="instaUrl" type="text" placeholder="Paste link mama..." 
                    class="bg-transparent flex-1 p-2 outline-none text-sm">
-            <button onclick="addPost()" class="bg-pink-600 px-5 py-2 rounded-xl font-bold text-sm">Save</button>
+            <button onclick="saveReel()" class="bg-pink-600 px-4 py-2 rounded-xl font-bold">Save</button>
         </div>
 
         <div id="vaultGrid" class="grid grid-cols-2 gap-4">
@@ -26,35 +28,54 @@
     </div>
 
     <script>
-        function addPost() {
+        // 1. Save Logic (Data akkadne undali)
+        function saveReel() {
             const url = document.getElementById('instaUrl').value;
-            if(!url) return alert("Link marchipoyavu mama!");
+            if(!url) return alert("Link pettu mama!");
 
-            // Demo Post structure - Real project lo API nundi Image techukovali
-            const grid = document.getElementById('vaultGrid');
-            const postCard = document.createElement('div');
-            postCard.className = "reel-card relative aspect-[9/16] bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800";
-            
-            postCard.innerHTML = `
-                <div class="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
-                <img src="https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=400" class="w-full h-full object-cover opacity-60">
-                
-                <div class="absolute bottom-3 left-3 right-3">
-                    <p class="text-[10px] text-gray-300 truncate">${url}</p>
-                    <div class="flex items-center gap-1 mt-1 text-green-400">
-                        <span class="text-[10px] font-bold">READY OFFLINE</span>
-                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293l-4-4a1 1 0 00-1.414 0l-4 4a1 1 0 101.414 1.414L9 7.414V13a1 1 0 102 0V7.414l1.293 1.293a1 1 0 001.414-1.414z"/></svg>
-                    </div>
-                </div>
-                
-                <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-80">
-                    <svg class="w-12 h-12" fill="white" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                </div>
-            `;
+            const newReel = {
+                id: Date.now(),
+                url: url,
+                thumb: "https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=400" // Temporary Image
+            };
 
-            grid.prepend(postCard);
+            let reels = JSON.parse(localStorage.getItem('myVault')) || [];
+            reels.push(newReel);
+            localStorage.setItem('myVault', JSON.stringify(reels));
+
+            renderReels();
             document.getElementById('instaUrl').value = '';
         }
+
+        // 2. Display Logic (Malli open chesinappudu)
+        function renderReels() {
+            const grid = document.getElementById('vaultGrid');
+            const reels = JSON.parse(localStorage.getItem('myVault')) || [];
+            
+            grid.innerHTML = reels.length ? '' : '<p class="col-span-2 text-center text-gray-500 italic">No reels saved yet.</p>';
+            
+            reels.reverse().forEach(reel => {
+                const card = document.createElement('div');
+                card.className = "reel-card relative aspect-[9/16] bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800";
+                card.innerHTML = `
+                    <img src="${reel.thumb}" class="w-full h-full object-cover opacity-50">
+                    <div class="absolute bottom-3 left-3 right-3">
+                        <p class="text-[10px] text-gray-400 truncate">${reel.url}</p>
+                        <div class="text-[10px] text-green-500 font-bold mt-1">OFFLINE READY ✅</div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        // 3. Service Worker Registration (Offline Web)
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js')
+                .then(() => console.log("Offline mode active!"))
+                .catch(err => console.error(err));
+        }
+
+        window.onload = renderReels;
     </script>
 </body>
 </html>

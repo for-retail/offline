@@ -3,99 +3,121 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vault Offline - Pro 📦</title>
-    <link rel="manifest" href="manifest.json">
+    <title>My Offline Vault 📦</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background-color: #050505; color: white; font-family: sans-serif; }
-        .media-card { background: #111; border-radius: 20px; border: 1px solid #222; overflow: hidden; }
-        video, img { width: 100%; height: auto; display: block; }
+        .reel-card { background: #111; border-radius: 20px; border: 1px solid #222; overflow: hidden; }
+        video, img { width: 100%; height: auto; border-radius: 15px; }
     </style>
 </head>
 <body class="p-5">
 
     <div class="max-w-md mx-auto">
-        <header class="mb-6 flex justify-between items-center">
-            <div>
-                <h1 class="text-3xl font-bold text-pink-500">My Vault</h1>
-                <p id="sw-status" class="text-[9px] text-zinc-600 font-bold uppercase tracking-widest">Checking Offline Guard...</p>
-            </div>
-        </header>
+        <h1 class="text-3xl font-bold text-pink-500 mb-2">Offline Vault 📦</h1>
+        <p class="text-gray-400 text-sm mb-6 font-bold uppercase tracking-widest">Net off chesi chusko mama!</p>
 
-        <div class="flex flex-col gap-3 mb-8 bg-zinc-900 p-4 rounded-3xl border border-zinc-800 shadow-2xl">
-            <textarea id="urls" rows="3" placeholder="Paste links (one per line)..." 
-                   class="bg-zinc-800 p-3 rounded-xl outline-none text-sm border border-zinc-700 text-white resize-none"></textarea>
-            <button id="saveBtn" onclick="saveBulk()" class="bg-pink-600 p-3 rounded-xl font-bold active:scale-95 transition">
-                Save Offline
+        <div class="flex flex-col gap-3 mb-8 bg-zinc-900 p-4 rounded-3xl border border-zinc-800">
+            <textarea id="mediaUrls" rows="3" placeholder="Paste links (one per line)..." 
+                   class="bg-zinc-800 p-3 rounded-xl outline-none text-sm border border-zinc-700"></textarea>
+            <button id="saveBtn" onclick="processBulk()" class="bg-pink-600 p-3 rounded-xl font-bold active:scale-95 transition">
+                Save to Offline Vault
             </button>
         </div>
 
-        <div id="grid" class="flex flex-col gap-6"></div>
+        <div id="vaultGrid" class="flex flex-col gap-6">
+            </div>
     </div>
 
     <script>
-        // 1. REGISTER SW.JS (MUKHYAM!)
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('./sw.js')
-            .then(() => document.getElementById('sw-status').innerText = "Offline Mode Enabled ✅")
-            .catch(() => document.getElementById('sw-status').innerText = "Offline Mode Failed ❌");
-        }
+        const grid = document.getElementById('vaultGrid');
 
-        // 2. DATABASE LOGIC
-        let db;
-        const request = indexedDB.open("FinalVaultDB", 1);
-        request.onupgradeneeded = e => {
-            db = e.target.result;
-            if(!db.objectStoreNames.contains("media")) db.createObjectStore("media", { keyPath: "id" });
-        };
-        request.onsuccess = e => { db = e.target.result; render(); };
+        // RECOVERY LOGIC: Anni paatha perlu vethiki offline data ni load chesthunnam
+        const dbsToTry = ["PersonalVault", "UniversalMediaVault", "UniversalVault"];
+        const storesToTry = ["videos", "media", "mediaItems"];
 
-        async function saveBulk() {
-            const btn = document.getElementById('saveBtn');
-            const linkList = document.getElementById('urls').value.split('\n').filter(u => u.trim() !== "");
-            if(!linkList.length) return;
-
-            btn.disabled = true;
-            for(let i=0; i<linkList.length; i++) {
-                btn.innerText = `Lakkuntunnanu (${i+1}/${linkList.length})...`;
-                try {
-                    const res = await fetch(linkList[i]);
-                    const blob = await res.blob();
-                    const tx = db.transaction("media", "readwrite");
-                    tx.objectStore("media").add({
-                        id: Date.now() + i,
-                        data: blob,
-                        mime: blob.type,
-                        date: new Date().toLocaleDateString()
-                    });
-                    await new Promise(r => tx.oncomplete = r);
-                } catch (e) { console.error(e); }
-            }
-            btn.innerText = "Save Offline";
-            btn.disabled = false;
-            document.getElementById('urls').value = '';
-            render();
-        }
-
-        function render() {
-            const grid = document.getElementById('grid');
+        function loadEverything() {
             grid.innerHTML = '';
-            const tx = db.transaction("media", "readonly");
-            tx.objectStore("media").openCursor(null, 'prev').onsuccess = (e) => {
+            dbsToTry.forEach(dbName => {
+                const request = indexedDB.open(dbName);
+                request.onsuccess = (e) => {
+                    const db = e.target.result;
+                    storesToTry.forEach(storeName => {
+                        if (db.objectStoreNames.contains(storeName)) {
+                            renderFromStore(db, storeName);
+                        }
+                    });
+                };
+            });
+        }
+
+        function renderFromStore(db, storeName) {
+            const tx = db.transaction(storeName, "readonly");
+            const store = tx.objectStore(storeName);
+            store.openCursor(null, 'prev').onsuccess = (e) => {
                 const cursor = e.target.result;
-                if(cursor) {
+                if (cursor) {
                     const item = cursor.value;
-                    const blobUrl = URL.createObjectURL(item.data);
-                    const card = document.createElement('div');
-                    card.className = "media-card p-2";
-                    card.innerHTML = item.mime.startsWith('image/') 
-                        ? `<img src="${blobUrl}">` 
-                        : `<video src="${blobUrl}" controls></video>`;
-                    grid.appendChild(card);
+                    // File data (Blob) undho ledho check chesthunnam (Pure Offline)
+                    const blobData = item.data || item.videoBlob || item.blob;
+                    if (blobData) {
+                        const blobUrl = URL.createObjectURL(blobData);
+                        const mime = item.mime || blobData.type || "video/mp4";
+                        
+                        const card = document.createElement('div');
+                        card.className = "reel-card p-2 shadow-xl";
+                        
+                        let mediaHtml = mime.startsWith('image/') 
+                            ? `<img src="${blobUrl}">` 
+                            : `<video src="${blobUrl}" controls preload="metadata"></video>`;
+
+                        card.innerHTML = `
+                            ${mediaHtml}
+                            <div class="p-3 flex justify-between items-center">
+                                <span class="text-[10px] text-green-500 font-bold uppercase">Ready Offline ✅</span>
+                                <span class="text-[9px] text-zinc-600">${item.date || 'Saved'}</span>
+                            </div>
+                        `;
+                        grid.appendChild(card);
+                    }
                     cursor.continue();
                 }
             };
         }
+
+        async function processBulk() {
+            const btn = document.getElementById('saveBtn');
+            const urls = document.getElementById('mediaUrls').value.split('\n').filter(u => u.trim() !== "");
+            if(!urls.length) return;
+
+            btn.disabled = true;
+            // Kotha items ni "PersonalVault" lo "videos" dabba lo dhesthunnam (Paatha settings)
+            const request = indexedDB.open("PersonalVault", 1);
+            request.onsuccess = async (e) => {
+                const db = e.target.result;
+                for (let i = 0; i < urls.length; i++) {
+                    btn.innerText = `Lakkuntunnanu (${i+1}/${urls.length})...`;
+                    try {
+                        const res = await fetch(urls[i]);
+                        const blob = await res.blob();
+                        const tx = db.transaction("videos", "readwrite");
+                        tx.objectStore("videos").add({
+                            id: Date.now() + i,
+                            data: blob,
+                            mime: blob.type,
+                            date: new Date().toLocaleDateString()
+                        });
+                    } catch (err) { console.log("Fail:", urls[i]); }
+                }
+                btn.innerText = "Save to Offline Vault";
+                btn.disabled = false;
+                document.getElementById('mediaUrls').value = '';
+                loadEverything();
+            };
+        }
+
+        // App Start
+        loadEverything();
     </script>
 </body>
 </html>

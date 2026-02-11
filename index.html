@@ -3,24 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Personal Vault - Pure Offline</title>
+    <title>Universal Media Vault 📦</title>
     <link rel="manifest" href="manifest.json">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        .reel-card { transition: 0.3s; }
         body { background-color: #050505; color: white; font-family: sans-serif; }
+        .media-card { background: #111; border-radius: 20px; overflow: hidden; border: 1px solid #222; }
+        img, video { width: 100%; height: auto; display: block; }
     </style>
 </head>
 <body class="p-5">
 
     <div class="max-w-md mx-auto">
-        <h1 class="text-3xl font-bold text-pink-500 mb-2">My Offline Vault 📦</h1>
-        <p class="text-gray-400 text-sm mb-6">Net lekunda chusko mama!</p>
+        <h1 class="text-3xl font-bold text-pink-500 mb-2">Media Vault 📦</h1>
+        <p class="text-gray-400 text-sm mb-6">Video, Photo edhaina dachey mama!</p>
 
-        <div class="flex gap-2 mb-8 bg-zinc-900 p-2 rounded-2xl border border-zinc-800">
-            <input id="socialUrl" type="text" placeholder="Paste link (Insta/Twitter)..." 
-                   class="bg-transparent flex-1 p-2 outline-none text-sm">
-            <button id="saveBtn" onclick="processVideo()" class="bg-pink-600 px-4 py-2 rounded-xl font-bold">Save</button>
+        <div class="flex flex-col gap-3 mb-8 bg-zinc-900 p-4 rounded-3xl border border-zinc-800 shadow-2xl">
+            <input id="mediaUrl" type="text" placeholder="Paste Video or Image link..." 
+                   class="bg-zinc-800 p-3 rounded-xl outline-none text-sm border border-zinc-700 focus:border-pink-500 transition">
+            <button id="saveBtn" onclick="processMedia()" class="bg-pink-600 p-3 rounded-xl font-bold active:scale-95 transition">
+                Add to Vault
+            </button>
         </div>
 
         <div id="vaultGrid" class="flex flex-col gap-6">
@@ -29,16 +32,17 @@
 
     <script>
         let db;
-        const request = indexedDB.open("PersonalVault", 1);
+        const request = indexedDB.open("UniversalMediaVault", 1);
 
         request.onupgradeneeded = e => {
             db = e.target.result;
             db.createObjectStore("media", { keyPath: "id" });
         };
+
         request.onsuccess = e => { db = e.target.result; renderVault(); };
 
-        async function processVideo() {
-            const url = document.getElementById('socialUrl').value;
+        async function processMedia() {
+            const url = document.getElementById('mediaUrl').value;
             const btn = document.getElementById('saveBtn');
             if(!url) return;
 
@@ -46,35 +50,37 @@
             btn.disabled = true;
 
             try {
-                // IMPORTANT: Ee URL daggara nee Vercel App URL pettu mama
-                // Temporary ga 'allorigins' vaduthunnam, but Vercel setup chesthe stable untundi
-                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-                
-                const response = await fetch(proxyUrl);
+                const response = await fetch(url);
                 const blob = await response.blob();
-
-                if(blob.size < 1000) throw new Error("File too small - Blocked!");
+                
+                // File type ni identify chesthunnam (image-ah leka video-ah)
+                const fileType = blob.type; 
 
                 const entry = {
                     id: Date.now(),
-                    url: url,
                     data: blob,
-                    time: new Date().toLocaleTimeString()
+                    url: url,
+                    mime: fileType,
+                    date: new Date().toLocaleDateString()
                 };
 
                 const tx = db.transaction("media", "readwrite");
                 tx.objectStore("media").add(entry);
                 tx.oncomplete = () => {
-                    btn.innerText = "Save";
-                    btn.disabled = false;
-                    document.getElementById('socialUrl').value = '';
-                    renderVault();
+                    finalize();
                 };
             } catch (err) {
-                alert("Direct download blocked mama! Check internet or Proxy.");
-                btn.innerText = "Save";
-                btn.disabled = false;
+                alert("Direct download blocked! CORS issue valla image/video dachalekapothunna. Link direct file dhi ayyi undali mama.");
+                finalize();
             }
+        }
+
+        function finalize() {
+            const btn = document.getElementById('saveBtn');
+            btn.innerText = "Add to Vault";
+            btn.disabled = false;
+            document.getElementById('mediaUrl').value = '';
+            renderVault();
         }
 
         function renderVault() {
@@ -82,21 +88,28 @@
             grid.innerHTML = '';
             
             const tx = db.transaction("media", "readonly");
-            const store = tx.objectStore("media");
-            
-            store.openCursor(null, 'prev').onsuccess = (e) => {
+            tx.objectStore("media").openCursor(null, 'prev').onsuccess = (e) => {
                 const cursor = e.target.result;
                 if (cursor) {
                     const item = cursor.value;
-                    const videoUrl = URL.createObjectURL(item.data);
+                    const blobUrl = URL.createObjectURL(item.data);
                     
                     const card = document.createElement('div');
-                    card.className = "bg-zinc-900 rounded-3xl overflow-hidden border border-zinc-800 shadow-xl";
+                    card.className = "media-card shadow-xl";
+                    
+                    // Logic: Image ayithe <img> tag, Video ayithe <video> tag
+                    let mediaElement = '';
+                    if (item.mime.startsWith('image/')) {
+                        mediaElement = `<img src="${blobUrl}" alt="Saved Image">`;
+                    } else {
+                        mediaElement = `<video src="${blobUrl}" controls preload="metadata"></video>`;
+                    }
+
                     card.innerHTML = `
-                        <video src="${videoUrl}" controls class="w-full h-auto max-h-[500px]"></video>
-                        <div class="p-4 bg-zinc-900/50 backdrop-blur">
-                            <p class="text-[10px] text-zinc-500 truncate mb-1">${item.url}</p>
-                            <span class="text-[9px] bg-green-500/20 text-green-400 px-2 py-1 rounded-full font-bold">READY OFFLINE ✅</span>
+                        ${mediaElement}
+                        <div class="p-4 flex justify-between items-center bg-zinc-900">
+                            <span class="text-[10px] text-zinc-500 font-mono">${item.mime.split('/')[1].toUpperCase()} File</span>
+                            <span class="text-[10px] text-green-500 font-bold">OFFLINE READY ✅</span>
                         </div>
                     `;
                     grid.appendChild(card);

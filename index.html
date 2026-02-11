@@ -3,26 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Universal Media Vault 📦</title>
+    <title>My Personal Vault 📦</title>
     <link rel="manifest" href="manifest.json">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #050505; color: white; font-family: sans-serif; }
-        .media-card { background: #111; border-radius: 20px; overflow: hidden; border: 1px solid #222; }
-        img, video { width: 100%; height: auto; display: block; }
+        body { background-color: #050505; color: white; font-family: sans-serif; -webkit-tap-highlight-color: transparent; }
+        .media-card { background: #111; border-radius: 24px; overflow: hidden; border: 1px solid #222; transition: transform 0.2s; }
+        img, video { width: 100%; height: auto; display: block; border-bottom: 1px solid #222; }
+        textarea::placeholder { color: #444; }
     </style>
 </head>
 <body class="p-5">
 
     <div class="max-w-md mx-auto">
-        <h1 class="text-3xl font-bold text-pink-500 mb-2">Media Vault 📦</h1>
-        <p class="text-gray-400 text-sm mb-6">Video, Photo edhaina dachey mama!</p>
+        <header class="flex justify-between items-center mb-6">
+            <div>
+                <h1 class="text-3xl font-bold text-pink-500">Vault 📦</h1>
+                <p class="text-zinc-500 text-xs uppercase tracking-widest font-bold">Offline Media Center</p>
+            </div>
+            <div id="status" class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+        </header>
 
-        <div class="flex flex-col gap-3 mb-8 bg-zinc-900 p-4 rounded-3xl border border-zinc-800 shadow-2xl">
-            <input id="mediaUrl" type="text" placeholder="Paste Video or Image link..." 
-                   class="bg-zinc-800 p-3 rounded-xl outline-none text-sm border border-zinc-700 focus:border-pink-500 transition">
-            <button id="saveBtn" onclick="processMedia()" class="bg-pink-600 p-3 rounded-xl font-bold active:scale-95 transition">
-                Add to Vault
+        <div class="flex flex-col gap-4 mb-8 bg-zinc-900/50 p-5 rounded-3xl border border-zinc-800 shadow-2xl backdrop-blur-md">
+            <textarea id="mediaUrls" rows="4" 
+                   placeholder="Links ikkada paste cheyi mama...&#10;Line ki okkati pettu (mp4, jpg, png, mkv)!" 
+                   class="bg-zinc-800/50 p-4 rounded-2xl outline-none text-sm border border-zinc-700 focus:border-pink-500 transition resize-none text-white"></textarea>
+            
+            <button id="saveBtn" onclick="processBulkMedia()" 
+                    class="bg-pink-600 hover:bg-pink-500 p-4 rounded-2xl font-bold active:scale-95 transition shadow-lg shadow-pink-900/40">
+                Save to Vault
             </button>
         </div>
 
@@ -31,56 +40,66 @@
     </div>
 
     <script>
+        // MAMA GURTHUPETUKO: Database name "PersonalVault" ani unchanu. 
+        // So nee patha data ekkadiki podhu!
         let db;
-        const request = indexedDB.open("UniversalMediaVault", 1);
+        const request = indexedDB.open("PersonalVault", 1);
 
         request.onupgradeneeded = e => {
             db = e.target.result;
-            db.createObjectStore("media", { keyPath: "id" });
+            // "media" ane store create chesthunnam okavela lekapothe
+            if (!db.objectStoreNames.contains("media")) {
+                db.createObjectStore("media", { keyPath: "id" });
+            }
         };
 
-        request.onsuccess = e => { db = e.target.result; renderVault(); };
+        request.onsuccess = e => { 
+            db = e.target.result; 
+            renderVault(); 
+        };
 
-        async function processMedia() {
-            const url = document.getElementById('mediaUrl').value;
+        async function processBulkMedia() {
+            const rawInput = document.getElementById('mediaUrls').value;
             const btn = document.getElementById('saveBtn');
-            if(!url) return;
+            const links = rawInput.split(/\n/).map(l => l.trim()).filter(l => l !== "");
 
-            btn.innerText = "Downloading...";
+            if (links.length === 0) return alert("Links pettu mama!");
+
             btn.disabled = true;
+            let success = 0;
 
-            try {
-                const response = await fetch(url);
-                const blob = await response.blob();
-                
-                // File type ni identify chesthunnam (image-ah leka video-ah)
-                const fileType = blob.type; 
+            for (let i = 0; i < links.length; i++) {
+                btn.innerText = `Saving ${i+1}/${links.length}...`;
+                try {
+                    const response = await fetch(links[i]);
+                    if (!response.ok) throw new Error();
+                    const blob = await response.blob();
+                    
+                    const entry = {
+                        id: Date.now() + i,
+                        data: blob,
+                        url: links[i],
+                        mime: blob.type,
+                        date: new Date().toLocaleDateString()
+                    };
 
-                const entry = {
-                    id: Date.now(),
-                    data: blob,
-                    url: url,
-                    mime: fileType,
-                    date: new Date().toLocaleDateString()
-                };
-
-                const tx = db.transaction("media", "readwrite");
-                tx.objectStore("media").add(entry);
-                tx.oncomplete = () => {
-                    finalize();
-                };
-            } catch (err) {
-                alert("Direct download blocked! CORS issue valla image/video dachalekapothunna. Link direct file dhi ayyi undali mama.");
-                finalize();
+                    const tx = db.transaction("media", "readwrite");
+                    await new Promise(r => {
+                        tx.objectStore("media").add(entry);
+                        tx.oncomplete = r;
+                    });
+                    success++;
+                } catch (err) {
+                    console.error("CORS/Link Error:", links[i]);
+                }
             }
-        }
 
-        function finalize() {
-            const btn = document.getElementById('saveBtn');
-            btn.innerText = "Add to Vault";
+            btn.innerText = "Save to Vault";
             btn.disabled = false;
-            document.getElementById('mediaUrl').value = '';
+            document.getElementById('mediaUrls').value = '';
             renderVault();
+            if(success > 0) alert(`${success} items dachesanu mama! ✅`);
+            else alert("Links fail ayyayi. Direct download link (mp4/jpg) pettu mama!");
         }
 
         function renderVault() {
@@ -88,32 +107,39 @@
             grid.innerHTML = '';
             
             const tx = db.transaction("media", "readonly");
-            tx.objectStore("media").openCursor(null, 'prev').onsuccess = (e) => {
+            const store = tx.objectStore("media");
+            
+            store.openCursor(null, 'prev').onsuccess = (e) => {
                 const cursor = e.target.result;
                 if (cursor) {
                     const item = cursor.value;
                     const blobUrl = URL.createObjectURL(item.data);
                     
                     const card = document.createElement('div');
-                    card.className = "media-card shadow-xl";
+                    card.className = "media-card";
                     
-                    // Logic: Image ayithe <img> tag, Video ayithe <video> tag
-                    let mediaElement = '';
-                    if (item.mime.startsWith('image/')) {
-                        mediaElement = `<img src="${blobUrl}" alt="Saved Image">`;
-                    } else {
-                        mediaElement = `<video src="${blobUrl}" controls preload="metadata"></video>`;
-                    }
+                    // Image or Video detection
+                    let mediaElement = (item.mime && item.mime.startsWith('image/')) 
+                        ? `<img src="${blobUrl}" loading="lazy">` 
+                        : `<video src="${blobUrl}" controls preload="metadata"></video>`;
 
                     card.innerHTML = `
                         ${mediaElement}
-                        <div class="p-4 flex justify-between items-center bg-zinc-900">
-                            <span class="text-[10px] text-zinc-500 font-mono">${item.mime.split('/')[1].toUpperCase()} File</span>
-                            <span class="text-[10px] text-green-500 font-bold">OFFLINE READY ✅</span>
+                        <div class="p-4 flex justify-between items-center bg-zinc-900/80">
+                            <div class="flex flex-col text-[10px]">
+                                <span class="text-zinc-400 font-bold uppercase tracking-tighter">${item.mime ? item.mime.split('/')[1] : 'FILE'}</span>
+                                <span class="text-zinc-600">${item.date || 'Saved'}</span>
+                            </div>
+                            <div class="flex items-center gap-1 text-green-500 font-black text-[9px] uppercase">
+                                <span class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                                OFFLINE
+                            </div>
                         </div>
                     `;
                     grid.appendChild(card);
                     cursor.continue();
+                } else if (grid.innerHTML === '') {
+                    grid.innerHTML = '<div class="text-center py-20 text-zinc-700 font-bold uppercase tracking-widest">Vault Empty</div>';
                 }
             };
         }

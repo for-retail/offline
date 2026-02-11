@@ -20,130 +20,138 @@
         <div class="flex gap-2 mb-8 bg-zinc-900 p-2 rounded-2xl border border-zinc-800">
             <input id="instaUrl" type="text" placeholder="Paste link mama..." 
                    class="bg-transparent flex-1 p-2 outline-none text-sm">
-            <button onclick="saveReel()" class="bg-pink-600 px-4 py-2 rounded-xl font-bold">Save</button>
+            <button id="saveBtn" onclick="saveReel()" class="bg-pink-600 px-4 py-2 rounded-xl font-bold">Save</button>
         </div>
 
-        <div id="vaultGrid" class="grid grid-cols-2 gap-4">
+        <div id="vaultGrid" class="grid grid-cols-1 gap-4">
             </div>
     </div>
 
     <script>
-        // 1. Database Setup (IndexedDB)
-const dbName = "InstaVaultDB";
-let db;
-const request = indexedDB.open(dbName, 1);
+        // 1. Database Setup
+        const dbName = "InstaVaultDB";
+        let db;
+        const request = indexedDB.open(dbName, 1);
 
-request.onupgradeneeded = e => {
-    db = e.target.result;
-    db.createObjectStore("videos", { keyPath: "id" });
-};
-request.onsuccess = e => { db = e.target.result; renderReels(); };
-
-// 2. Save Reel with Offline Support
-async function saveReel() {
-    const url = document.getElementById('instaUrl').value;
-    if(!url) return alert("Link pettu mama!");
-
-    try {
-        // Proxy API vaduthunnam (Deeniki constraints untayi, but test cheyochu)
-        // Note: Real world lo nuvvu RapidAPI key vadithe inka stable ga untundi
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-        
-        const response = await fetch(proxyUrl);
-        const blob = await response.blob(); // Video/Data ni binary ga marchu
-
-        const newReel = {
-            id: Date.now(),
-            url: url,
-            videoBlob: blob, // Actual video data ikkada dachaam!
-            timestamp: new Date().toLocaleString()
+        request.onupgradeneeded = e => {
+            db = e.target.result;
+            db.createObjectStore("videos", { keyPath: "id" });
+        };
+        request.onsuccess = e => { 
+            db = e.target.result; 
+            renderReels(); 
         };
 
-        const transaction = db.transaction("videos", "readwrite");
-        transaction.objectStore("videos").add(newReel);
-        
-        transaction.oncomplete = () => {
-            alert("Offline storage success mama! Play chesko.");
+        // 2. Save Reel Logic
+        async function saveReel() {
+            const url = document.getElementById('instaUrl').value;
+            const btn = document.getElementById('saveBtn');
+            if(!url) return alert("Link pettu mama!");
+
+            btn.innerText = "Saving...";
+            btn.disabled = true;
+
+            try {
+                // Video ni direct ga download cheyadaniki try chesthunnam
+                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+                const response = await fetch(proxyUrl);
+                
+                if(!response.ok) throw new Error("Proxy failed");
+
+                const blob = await response.blob();
+
+                const newReel = {
+                    id: Date.now(),
+                    url: url,
+                    videoBlob: blob, // Actual Binary Data
+                    type: 'offline'
+                };
+
+                const transaction = db.transaction("videos", "readwrite");
+                transaction.objectStore("videos").add(newReel);
+                
+                transaction.oncomplete = () => {
+                    btn.innerText = "Save";
+                    btn.disabled = false;
+                    document.getElementById('instaUrl').value = '';
+                    renderReels();
+                };
+            } catch (err) {
+                console.log("Offline failed, switching to Embed mode", err);
+                // Fail aithe LocalStorage lo dachi Embed chupiddam
+                saveAsEmbed(url);
+            }
+        }
+
+        function saveAsEmbed(url) {
+            let embeds = JSON.parse(localStorage.getItem('embedVault')) || [];
+            embeds.push({ id: Date.now(), url: url, type: 'embed' });
+            localStorage.setItem('embedVault', JSON.stringify(embeds));
+            
+            document.getElementById('saveBtn').innerText = "Save";
+            document.getElementById('saveBtn').disabled = false;
+            document.getElementById('instaUrl').value = '';
             renderReels();
-        };
-    } catch (err) {
-        console.error(err);
-        alert("API block chesindi mama. Embed logic ki switch avdham.");
-    }
-}
-
-// 3. Render function for Offline Video
-function renderReels() {
-    const grid = document.getElementById('vaultGrid');
-    grid.innerHTML = '';
-    
-    const transaction = db.transaction("videos", "readonly");
-    const store = transaction.objectStore("videos");
-    
-    store.openCursor(null, 'prev').onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor) {
-            const reel = cursor.value;
-            const videoUrl = URL.createObjectURL(reel.videoBlob); // Blob nundi link create chesthunnam
-            
-            const card = document.createElement('div');
-            card.className = "reel-card bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800 p-2 mb-4";
-            card.innerHTML = `
-                <video src="${videoUrl}" controls class="w-full rounded-xl"></video>
-                <p class="text-[10px] text-gray-500 mt-2 truncate">${reel.url}</p>
-            `;
-            grid.appendChild(card);
-            cursor.continue();
         }
-    };
-}
 
-        // 2. Display Logic (Malli open chesinappudu)
+        // 3. Main Render Function
         function renderReels() {
-    const grid = document.getElementById('vaultGrid');
-    const reels = JSON.parse(localStorage.getItem('myVault')) || [];
-    
-    grid.innerHTML = reels.length ? '' : '<p class="col-span-2 text-center text-gray-500 italic">No reels saved yet.</p>';
-    
-    reels.reverse().forEach(reel => {
-        const card = document.createElement('div');
-        // Card style koncham flexible ga marchali embed kosam
-        card.className = "reel-card mb-4 bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800 p-2";
-        
-        if (reel.url.includes("instagram.com")) {
-            // Instagram Embed Logic
-            // Link nundi post ID ni extract chesthunnam
-            const instaId = reel.url.split('/reels/')[1] || reel.url.split('/p/')[1] || reel.url.split('/reel/')[1];
-            const cleanId = instaId ? instaId.split('/')[0] : '';
+            const grid = document.getElementById('vaultGrid');
+            grid.innerHTML = '';
+
+            // A. IndexedDB nundi Offline Videos
+            const transaction = db.transaction("videos", "readonly");
+            const store = transaction.objectStore("videos");
             
-            card.innerHTML = `
-                <iframe src="https://www.instagram.com/p/${cleanId}/embed" 
-                        class="w-full h-[450px]" 
-                        frameborder="0" scrolling="no" allowtransparency="true">
-                </iframe>
-                <p class="text-[10px] text-gray-500 p-2 truncate">${reel.url}</p>
-            `;
-        } else {
-            // Other links (Twitter etc.) kosam normal link card
-            card.innerHTML = `
-                <div class="p-4 text-center">
-                    <p class="text-blue-400 font-bold mb-2">Social Post</p>
-                    <a href="${reel.url}" target="_blank" class="text-[10px] text-gray-500 underline truncate block">${reel.url}</a>
-                </div>
-            `;
-        }
-        grid.appendChild(card);
-    });
-}
+            store.openCursor(null, 'prev').onsuccess = (e) => {
+                const cursor = e.target.result;
+                if (cursor) {
+                    const reel = cursor.value;
+                    const videoUrl = URL.createObjectURL(reel.videoBlob);
+                    createCard(reel.url, videoUrl, true);
+                    cursor.continue();
+                }
+            };
 
-        // 3. Service Worker Registration (Offline Web)
+            // B. LocalStorage nundi Embeds
+            const embeds = JSON.parse(localStorage.getItem('embedVault')) || [];
+            embeds.reverse().forEach(reel => {
+                const instaId = reel.url.split('/reels/')[1] || reel.url.split('/p/')[1] || reel.url.split('/reel/')[1];
+                const cleanId = instaId ? instaId.split('/')[0] : '';
+                const embedUrl = `https://www.instagram.com/p/${cleanId}/embed`;
+                createCard(reel.url, embedUrl, false);
+            });
+        }
+
+        function createCard(originalUrl, displayUrl, isOffline) {
+            const grid = document.getElementById('vaultGrid');
+            const card = document.createElement('div');
+            card.className = "reel-card mb-4 bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800 p-2";
+            
+            if(isOffline) {
+                card.innerHTML = `
+                    <video src="${displayUrl}" controls class="w-full rounded-xl"></video>
+                    <div class="flex justify-between items-center p-2">
+                        <p class="text-[10px] text-gray-500 truncate w-3/4">${originalUrl}</p>
+                        <span class="text-[9px] text-green-500 font-bold">OFFLINE ✅</span>
+                    </div>
+                `;
+            } else {
+                card.innerHTML = `
+                    <iframe src="${displayUrl}" class="w-full h-[450px]" frameborder="0" scrolling="no"></iframe>
+                    <div class="flex justify-between items-center p-2">
+                        <p class="text-[10px] text-gray-500 truncate w-3/4">${originalUrl}</p>
+                        <span class="text-[9px] text-blue-500 font-bold">ONLINE ONLY 🌐</span>
+                    </div>
+                `;
+            }
+            grid.appendChild(card);
+        }
+
+        // Service Worker
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js')
-                .then(() => console.log("Offline mode active!"))
-                .catch(err => console.error(err));
+            navigator.serviceWorker.register('sw.js');
         }
-
-        window.onload = renderReels;
     </script>
 </body>
 </html>

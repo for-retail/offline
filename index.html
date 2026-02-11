@@ -3,47 +3,62 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Personal Vault</title>
+    <title>My Private Vault</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #050505; color: white; font-family: sans-serif; }
-        .media-card { background: #111; border-radius: 20px; border: 1px solid #222; overflow: hidden; margin-bottom: 20px; }
-        video, img { width: 100%; height: auto; display: block; }
+        body { background-color: #050505; color: white; font-family: sans-serif; -webkit-tap-highlight-color: transparent; }
+        .media-card { background: #111; border-radius: 20px; border: 1px solid #222; overflow: hidden; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        video, img { width: 100%; height: auto; display: block; background: #000; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
     </style>
 </head>
 <body class="p-5">
 
     <div class="max-w-md mx-auto">
-        <header class="mb-6 flex justify-between items-center">
-            <h1 class="text-3xl font-bold text-pink-500">Vault 📦</h1>
-            <span id="status" class="text-[9px] bg-zinc-800 px-2 py-1 rounded text-zinc-500 font-bold tracking-widest uppercase">Syncing...</span>
+        <header class="mb-8 flex justify-between items-end">
+            <div>
+                <h1 class="text-4xl font-black text-pink-500 tracking-tighter">Vault 📦</h1>
+                <p class="text-[10px] text-zinc-500 font-bold uppercase tracking-[0.2em] mt-1">Personal Media Storage</p>
+            </div>
+            <div id="offline-tag" class="text-[9px] bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800 text-zinc-400 font-bold">
+                <span class="status-dot bg-zinc-700"></span>INITIALIZING...
+            </div>
         </header>
 
-        <div class="bg-zinc-900 p-4 rounded-3xl border border-zinc-800 mb-8 shadow-2xl">
-            <input id="urlInput" type="text" placeholder="Paste link here mama..." 
-                   class="w-full bg-zinc-800 p-3 rounded-xl outline-none text-sm mb-3 text-white border border-zinc-700 focus:border-pink-500 transition">
-            <button id="saveBtn" onclick="saveOne()" class="w-full bg-pink-600 p-3 rounded-xl font-bold active:scale-95 transition">
+        <div class="bg-zinc-900/50 p-5 rounded-[2rem] border border-zinc-800 mb-10 backdrop-blur-md">
+            <input id="urlInput" type="text" placeholder="Paste direct media link..." 
+                   class="w-full bg-zinc-800/50 p-4 rounded-2xl outline-none text-sm mb-4 text-white border border-zinc-700 focus:border-pink-500 transition-all placeholder:text-zinc-600">
+            <button id="saveBtn" onclick="saveOne()" class="w-full bg-pink-600 hover:bg-pink-500 p-4 rounded-2xl font-bold text-white shadow-lg shadow-pink-900/20 active:scale-95 transition-all">
                 Save to Vault
             </button>
         </div>
 
-        <div id="vaultGrid" class="flex flex-col gap-4"></div>
+        <div id="vaultGrid" class="flex flex-col gap-2">
+            </div>
     </div>
 
     <script>
-        // --- 1. SERVICE WORKER REGISTER (RE-WRITTEN FOR SCOPE FIX) ---
+        // --- 1. FORCE OFFLINE REGISTRATION ---
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js')
-                .then(reg => {
-                    console.log('SW Registered!', reg);
-                    document.getElementById('status').innerText = "OFFLINE READY ✅";
-                    document.getElementById('status').classList.replace('text-zinc-500', 'text-green-500');
-                })
-                .catch(err => {
-                    console.log('SW Failed!', err);
-                    document.getElementById('status').innerText = "OFFLINE ERROR ❌";
+            // Inline worker creation to bypass file path issues in Via Browser
+            const swCode = `
+                const CACHE_NAME = 'vault-v5';
+                const ASSETS = ['./', 'index.html', 'https://cdn.tailwindcss.com'];
+                self.addEventListener('install', e => {
+                    e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(ASSETS)));
                 });
+                self.addEventListener('fetch', e => {
+                    e.respondWith(caches.match(e.request).then(r => r || fetch(e.request)));
+                });
+            `;
+            const blob = new Blob([swCode], { type: 'text/javascript' });
+            const swUrl = URL.createObjectURL(blob);
+
+            navigator.serviceWorker.register(swUrl)
+            .then(() => {
+                const tag = document.getElementById('offline-tag');
+                tag.innerHTML = '<span class="status-dot bg-green-500"></span>OFFLINE READY';
+                tag.classList.add('text-green-500');
             });
         }
 
@@ -52,40 +67,33 @@
         const request = indexedDB.open("FinalVaultDB", 1);
         request.onupgradeneeded = e => {
             db = e.target.result;
-            if(!db.objectStoreNames.contains("media")) {
-                db.createObjectStore("media", { keyPath: "id" });
-            }
+            if(!db.objectStoreNames.contains("media")) db.createObjectStore("media", { keyPath: "id" });
         };
-        request.onsuccess = e => { 
-            db = e.target.result; 
-            renderVault(); 
-        };
+        request.onsuccess = e => { db = e.target.result; renderVault(); };
 
+        // --- 3. SAVE LOGIC ---
         async function saveOne() {
             const btn = document.getElementById('saveBtn');
             const url = document.getElementById('urlInput').value.trim();
             if(!url) return;
 
             btn.disabled = true;
-            btn.innerText = "Saving...";
+            btn.innerText = "Downloading...";
             
             try {
                 const res = await fetch(url);
                 const blob = await res.blob();
                 const tx = db.transaction("media", "readwrite");
-                const store = tx.objectStore("media");
-                
-                await store.add({
+                tx.objectStore("media").add({
                     id: Date.now(),
                     data: blob,
                     mime: blob.type,
-                    date: new Date().toLocaleDateString()
+                    date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
                 });
-                
                 await new Promise(r => tx.oncomplete = r);
                 renderVault();
             } catch (err) { 
-                alert("Download link fail ayyindi mama. Direct URL pettu!"); 
+                alert("Download failed mama! Direct link (mp4/jpg) pettu."); 
             }
 
             btn.disabled = false;
@@ -93,7 +101,7 @@
             document.getElementById('urlInput').value = '';
         }
 
-        // --- 3. DELETE LOGIC ---
+        // --- 4. DELETE LOGIC ---
         function deleteItem(id) {
             if(confirm("Idhi delete cheyamantava mama?")) {
                 const tx = db.transaction("media", "readwrite");
@@ -105,11 +113,8 @@
         function renderVault() {
             const grid = document.getElementById('vaultGrid');
             grid.innerHTML = '';
-            
             const tx = db.transaction("media", "readonly");
-            const store = tx.objectStore("media");
-            
-            store.openCursor(null, 'prev').onsuccess = (e) => {
+            tx.objectStore("media").openCursor(null, 'prev').onsuccess = (e) => {
                 const cursor = e.target.result;
                 if (cursor) {
                     const item = cursor.value;
@@ -118,20 +123,25 @@
                     card.className = "media-card";
                     
                     let content = item.mime.startsWith('image/') 
-                        ? `<img src="${blobUrl}">` 
-                        : `<video src="${blobUrl}" controls></video>`;
+                        ? `<img src="${blobUrl}" loading="lazy">` 
+                        : `<video src="${blobUrl}" controls preload="metadata"></video>`;
 
                     card.innerHTML = `
                         ${content}
-                        <div class="p-4 flex justify-between items-center bg-zinc-900">
-                            <span class="text-[10px] text-zinc-500 font-bold">${item.date}</span>
-                            <button onclick="deleteItem(${item.id})" class="text-[10px] bg-red-900/20 text-red-500 border border-red-500/20 px-4 py-1.5 rounded-full font-bold active:bg-red-600 transition">
-                                DELETE
+                        <div class="p-5 flex justify-between items-center bg-zinc-900/80 backdrop-blur-sm">
+                            <div class="flex flex-col">
+                                <span class="text-[10px] text-zinc-400 font-black uppercase tracking-widest">${item.mime.split('/')[1]}</span>
+                                <span class="text-[9px] text-zinc-600 font-bold">${item.date}</span>
+                            </div>
+                            <button onclick="deleteItem(${item.id})" class="text-[10px] bg-red-500/10 text-red-500 border border-red-500/20 px-5 py-2 rounded-xl font-black uppercase tracking-widest active:bg-red-500 active:text-white transition-all">
+                                Delete
                             </button>
                         </div>
                     `;
                     grid.appendChild(card);
                     cursor.continue();
+                } else if (!grid.innerHTML) {
+                    grid.innerHTML = '<p class="text-center text-zinc-800 font-bold py-20 uppercase tracking-[0.3em]">Vault is empty</p>';
                 }
             };
         }

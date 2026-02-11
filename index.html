@@ -49,24 +49,41 @@
 
         // 2. Display Logic (Malli open chesinappudu)
         function renderReels() {
-            const grid = document.getElementById('vaultGrid');
-            const reels = JSON.parse(localStorage.getItem('myVault')) || [];
+    const grid = document.getElementById('vaultGrid');
+    const reels = JSON.parse(localStorage.getItem('myVault')) || [];
+    
+    grid.innerHTML = reels.length ? '' : '<p class="col-span-2 text-center text-gray-500 italic">No reels saved yet.</p>';
+    
+    reels.reverse().forEach(reel => {
+        const card = document.createElement('div');
+        // Card style koncham flexible ga marchali embed kosam
+        card.className = "reel-card mb-4 bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800 p-2";
+        
+        if (reel.url.includes("instagram.com")) {
+            // Instagram Embed Logic
+            // Link nundi post ID ni extract chesthunnam
+            const instaId = reel.url.split('/reels/')[1] || reel.url.split('/p/')[1] || reel.url.split('/reel/')[1];
+            const cleanId = instaId ? instaId.split('/')[0] : '';
             
-            grid.innerHTML = reels.length ? '' : '<p class="col-span-2 text-center text-gray-500 italic">No reels saved yet.</p>';
-            
-            reels.reverse().forEach(reel => {
-                const card = document.createElement('div');
-                card.className = "reel-card relative aspect-[9/16] bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800";
-                card.innerHTML = `
-                    <img src="${reel.thumb}" class="w-full h-full object-cover opacity-50">
-                    <div class="absolute bottom-3 left-3 right-3">
-                        <p class="text-[10px] text-gray-400 truncate">${reel.url}</p>
-                        <div class="text-[10px] text-green-500 font-bold mt-1">OFFLINE READY ✅</div>
-                    </div>
-                `;
-                grid.appendChild(card);
-            });
+            card.innerHTML = `
+                <iframe src="https://www.instagram.com/p/${cleanId}/embed" 
+                        class="w-full h-[450px]" 
+                        frameborder="0" scrolling="no" allowtransparency="true">
+                </iframe>
+                <p class="text-[10px] text-gray-500 p-2 truncate">${reel.url}</p>
+            `;
+        } else {
+            // Other links (Twitter etc.) kosam normal link card
+            card.innerHTML = `
+                <div class="p-4 text-center">
+                    <p class="text-blue-400 font-bold mb-2">Social Post</p>
+                    <a href="${reel.url}" target="_blank" class="text-[10px] text-gray-500 underline truncate block">${reel.url}</a>
+                </div>
+            `;
         }
+        grid.appendChild(card);
+    });
+}
 
         // 3. Service Worker Registration (Offline Web)
         if ('serviceWorker' in navigator) {

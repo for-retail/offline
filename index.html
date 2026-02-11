@@ -3,46 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Offline Vault 📦</title>
-    <link rel="manifest" href="manifest.json">
+    <title>My Offline Vault</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background-color: #050505; color: white; font-family: sans-serif; }
-        .reel-card { background: #111; border-radius: 20px; border: 1px solid #222; overflow: hidden; margin-bottom: 20px; }
+        .media-card { background: #111; border-radius: 20px; border: 1px solid #222; overflow: hidden; margin-bottom: 20px; position: relative; }
         video, img { width: 100%; height: auto; display: block; }
-        textarea::placeholder { color: #444; }
     </style>
 </head>
 <body class="p-5">
 
     <div class="max-w-md mx-auto">
         <header class="mb-6 flex justify-between items-center">
-            <div>
-                <h1 class="text-3xl font-bold text-pink-500">My Vault</h1>
-                <p id="sw-status" class="text-[9px] text-zinc-600 font-bold uppercase tracking-widest">Checking Offline Status...</p>
-            </div>
+            <h1 class="text-3xl font-bold text-pink-500">Vault 📦</h1>
+            <span id="status" class="text-[9px] bg-zinc-800 px-2 py-1 rounded text-zinc-500">CONNECTING...</span>
         </header>
 
-        <div class="flex flex-col gap-3 mb-8 bg-zinc-900 p-4 rounded-3xl border border-zinc-800 shadow-2xl">
-            <textarea id="mediaUrls" rows="3" placeholder="Paste links (one per line)..." 
-                   class="bg-zinc-800 p-3 rounded-xl outline-none text-sm border border-zinc-700 text-white resize-none"></textarea>
-            <button id="saveBtn" onclick="saveBulk()" class="bg-pink-600 p-3 rounded-xl font-bold active:scale-95 transition">
-                Bulk Save Offline
+        <div class="bg-zinc-900 p-4 rounded-3xl border border-zinc-800 mb-8">
+            <input id="urlInput" type="text" placeholder="Paste link here..." 
+                   class="w-full bg-zinc-800 p-3 rounded-xl outline-none text-sm mb-3 text-white border border-zinc-700">
+            <button id="saveBtn" onclick="saveOne()" class="w-full bg-pink-600 p-3 rounded-xl font-bold active:scale-95 transition">
+                Save to Vault
             </button>
         </div>
 
-        <div id="vaultGrid" class="flex flex-col gap-6"></div>
+        <div id="vaultGrid" class="flex flex-col gap-4"></div>
     </div>
 
     <script>
-        // 1. SERVICE WORKER REGISTER (Nee sw.js file ni connect chesthunnam)
+        // 1. Service Worker Registration
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('./sw.js')
-            .then(() => document.getElementById('sw-status').innerText = "App Ready Offline ✅")
-            .catch(() => document.getElementById('sw-status').innerText = "Offline Failed ❌");
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js', { scope: './' })
+                .then(() => document.getElementById('status').innerText = "OFFLINE READY ✅")
+                .catch(() => document.getElementById('status').innerText = "OFFLINE ERROR ❌");
+            });
         }
 
-        // 2. DATABASE LOGIC
+        // 2. Database Logic
         let db;
         const request = indexedDB.open("FinalVaultDB", 1);
         request.onupgradeneeded = e => {
@@ -51,31 +49,39 @@
         };
         request.onsuccess = e => { db = e.target.result; renderVault(); };
 
-        async function saveBulk() {
+        async function saveOne() {
             const btn = document.getElementById('saveBtn');
-            const links = document.getElementById('mediaUrls').value.split('\n').filter(u => u.trim() !== "");
-            if(!links.length) return;
+            const url = document.getElementById('urlInput').value.trim();
+            if(!url) return;
 
             btn.disabled = true;
-            for (let i = 0; i < links.length; i++) {
-                btn.innerText = `Saving ${i+1}/${links.length}...`;
-                try {
-                    const res = await fetch(links[i]);
-                    const blob = await res.blob();
-                    const tx = db.transaction("media", "readwrite");
-                    tx.objectStore("media").add({
-                        id: Date.now() + i,
-                        data: blob,
-                        mime: blob.type,
-                        date: new Date().toLocaleDateString()
-                    });
-                    await new Promise(r => tx.oncomplete = r);
-                } catch (err) { console.error(err); }
-            }
-            btn.innerText = "Bulk Save Offline";
+            btn.innerText = "Saving...";
+            
+            try {
+                const res = await fetch(url);
+                const blob = await res.blob();
+                const tx = db.transaction("media", "readwrite");
+                tx.objectStore("media").add({
+                    id: Date.now(),
+                    data: blob,
+                    mime: blob.type,
+                    date: new Date().toLocaleDateString()
+                });
+                await new Promise(r => tx.oncomplete = r);
+            } catch (err) { alert("Link issue mama! CORS error vundocchu."); }
+
             btn.disabled = false;
-            document.getElementById('mediaUrls').value = '';
+            btn.innerText = "Save to Vault";
+            document.getElementById('urlInput').value = '';
             renderVault();
+        }
+
+        function deleteItem(id) {
+            if(confirm("Delete cheyamantava mama?")) {
+                const tx = db.transaction("media", "readwrite");
+                tx.objectStore("media").delete(id);
+                tx.oncomplete = () => renderVault();
+            }
         }
 
         function renderVault() {
@@ -88,17 +94,19 @@
                     const item = cursor.value;
                     const blobUrl = URL.createObjectURL(item.data);
                     const card = document.createElement('div');
-                    card.className = "reel-card p-2 shadow-xl";
+                    card.className = "media-card";
                     
-                    let mediaHtml = item.mime.startsWith('image/') 
+                    let content = item.mime.startsWith('image/') 
                         ? `<img src="${blobUrl}">` 
-                        : `<video src="${blobUrl}" controls preload="metadata"></video>`;
+                        : `<video src="${blobUrl}" controls></video>`;
 
                     card.innerHTML = `
-                        ${mediaHtml}
-                        <div class="p-3 flex justify-between bg-zinc-900/50 mt-1">
-                            <span class="text-[9px] text-green-500 font-bold uppercase tracking-wider">OFFLINE READY</span>
-                            <span class="text-[9px] text-zinc-600">${item.date}</span>
+                        ${content}
+                        <div class="p-3 flex justify-between items-center bg-zinc-900">
+                            <span class="text-[10px] text-zinc-500 font-bold">${item.date}</span>
+                            <button onclick="deleteItem(${item.id})" class="text-[10px] bg-red-900/30 text-red-500 px-3 py-1 rounded-full border border-red-500/20 font-bold">
+                                DELETE
+                            </button>
                         </div>
                     `;
                     grid.appendChild(card);
